@@ -45,8 +45,8 @@ STRIDE = 25     # 25 tokens overlap between one window and the next
 BATCH_SIZE = 4
 DROPOUT = 0.3
 NUM_EPOCHS = 25
-BIDIRECTIONAL = False    # Choose between True / False to modify architecture
-USE_ATTENTION = False   # Choose between True / False to modify architecture
+BIDIRECTIONAL = True    # Choose between True / False to modify architecture
+USE_ATTENTION = True   # Choose between True / False to modify architecture
 
 # Text Generation
 TEMEPRATURE = 1.5   # Values above 1.0 create a more 'creative' model.

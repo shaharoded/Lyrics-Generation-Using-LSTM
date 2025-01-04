@@ -42,40 +42,31 @@ class Attention(nn.Module):
         Forward pass for the attention layer.
 
         Args:
-            query (torch.Tensor): Query tensor of shape (batch_size, query_dim).
-            keys (torch.Tensor): Key tensor of shape (batch_size, seq_len, key_dim).
-            values (torch.Tensor): Value tensor of shape (batch_size, seq_len, value_dim).
+            query (torch.Tensor): Query tensor of shape (batch_size, seq_len_query, query_dim).
+            keys (torch.Tensor): Key tensor of shape (batch_size, seq_len_keys, key_dim).
+            values (torch.Tensor): Value tensor of shape (batch_size, seq_len_keys, value_dim).
 
         Returns:
-            torch.Tensor: Context vector of shape (batch_size, output_dim).
+            torch.Tensor: Context vector of shape (batch_size, seq_len_query, output_dim).
         """
-        # Ensure query is sequence-compatible (if it's a single vector, add a sequence dimension)
-        if query.dim() == 2:
-            query = query.unsqueeze(1)  # (batch_size, 1, query_dim)
-            
         # Project inputs
-        query_proj = self.query_projection(query)  # (batch_size, output_dim)
-        keys_proj = self.key_projection(keys)      # (batch_size, seq_len, output_dim)
-        values_proj = self.value_projection(values)  # (batch_size, seq_len, output_dim)
+        query_proj = self.query_projection(query)  # (batch_size, seq_len_query, output_dim)
+        keys_proj = self.key_projection(keys)      # (batch_size, seq_len_keys, output_dim)
+        values_proj = self.value_projection(values)  # (batch_size, seq_len_keys, output_dim)
 
         # Compute attention scores
         scores = torch.matmul(query_proj, keys_proj.transpose(-2, -1))  # (batch_size, seq_len_query, seq_len_keys)
-        attention_weights = self.softmax(scores)  # (batch_size, 1, seq_len)
+        attention_weights = self.softmax(scores)  # (batch_size, seq_len_query, seq_len_keys)
 
         # Compute context vector
-        context = torch.matmul(attention_weights, values_proj)  # (batch_size, 1, output_dim)
-        
-        # If the query was a single vector, reduce back to (batch_size, output_dim)
-        if context.size(1) == 1:
-            context = context.squeeze(1)  # Remove the sequence dimension for single-vector query
-            
-        return context.squeeze(1)  # Remove the extra dimension
+        context = torch.matmul(attention_weights, values_proj)  # (batch_size, seq_len_query, output_dim)
+        return context  # (batch_size, seq_len_query, output_dim)
     
 
 class LyricsGenerator(nn.Module):
     def __init__(self, dataset, word_embedding_dim, 
                  melody_dim, hidden_dim, num_layers, 
-                 bidirectional_melody, dropout, use_attention=False):
+                 bidirectional_melody, dropout, use_attention):
         """
         Initialize the LyricsGenerator, designated to generate song lyrics based on melody.
         The model is a 2 layer LSTM model, one for processing the melody and the other to process text.
@@ -90,8 +81,11 @@ class LyricsGenerator(nn.Module):
             use_attention (bool): Whether to use attention mechanism. Default is False.
         """
         super(LyricsGenerator, self).__init__()
-        self.bidirectional_melody = bidirectional_melody
         self.use_attention = use_attention
+        # Allow attention to only work for bi-directional architecture
+        self.bidirectional_melody = True if use_attention else bidirectional_melody
+        if (use_attention and not bidirectional_melody):
+            print(f'[Warning]: The model implements attention mechanism only for bi-directional melody processing. __init__ changed automatically to bidirectional_melody=True, use_attention=True')
         
         # Extract vocab and Word2Vec from the dataset
         self.vocab = dataset.vocab
@@ -170,10 +164,10 @@ class LyricsGenerator(nn.Module):
         lyrics_output, _ = self.lyrics_rnn(word_embedded)
 
         if self.use_attention:
-            # Use the attention layer
-            context = self.attention_layer(query=melody_context, 
-                                           keys=lyrics_output, 
-                                           values=lyrics_output)
+            # Use the attention layer (attention per token)
+            context = self.attention_layer(query=lyrics_output, 
+                                           keys=melody_context, 
+                                           values=melody_context)
 
         else:
             # Expand the melody context to match the sequence length

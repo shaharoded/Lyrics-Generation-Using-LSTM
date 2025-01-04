@@ -1,0 +1,9 @@
+torch
+pretty_midi
+mido 
+numpy
+pandas
+contractions
+gensim
+tqdm
+tensorboard

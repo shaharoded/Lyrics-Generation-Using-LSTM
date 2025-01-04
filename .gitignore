@@ -1,0 +1,12 @@
+# Ignore specific files
+test_for_inspection.csv
+Data_compressed.zip
+Embedding Model_compressed.zip
+
+# Ignore an entire folder
+Data/
+Embedding Model/
+Trained Models/
+content/
+venv/
+__pycache__/

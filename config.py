@@ -38,13 +38,14 @@ SPECIAL_TOKENS = sorted(list({BOT_TOKEN, NEWLINE_TOKEN, CHORUS_TOKEN, EOT_TOKEN,
 # Training Parameters
 LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 1e-5
-TEACHERS_FORCING = 0.3
+TEACHERS_FORCING = 0.5
 VAL_RATIO = 0.2
 CHUNK_SIZE = 50     # 50 processed tokens in each window
 STRIDE = 25     # 25 tokens overlap between one window and the next
 BATCH_SIZE = 16
-EARLY_STOP = 5
+EARLY_STOP = 3
 DROPOUT = 0.5
+GENERATION_PENALTY_WEIGHT = 0.2 # Penalty added to the loss function under predefined conditions in the train function.
 NUM_EPOCHS = 40
 BIDIRECTIONAL = False    # Choose between True / False to modify architecture
 USE_ATTENTION = False   # Choose between True / False to modify architecture

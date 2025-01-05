@@ -65,7 +65,7 @@ class Attention(nn.Module):
 
 class LyricsGenerator(nn.Module):
     def __init__(self, dataset, word_embedding_dim, 
-                 melody_dim, hidden_dim, num_layers, 
+                 melody_dim, hidden_dim, 
                  bidirectional_melody, dropout, use_attention):
         """
         Initialize the LyricsGenerator, designated to generate song lyrics based on melody.
@@ -75,7 +75,6 @@ class LyricsGenerator(nn.Module):
             dataset (LyricsMelodyDataset): The dataset object containing the Word2Vec model and vocabulary.
             melody_dim (int): Dimensionality of melody vectors.
             hidden_dim (int): Hidden state size for RNNs.
-            num_layers (int): Number of RNN layers, for each RNN initialization.
             bidirectional_melody (bool): Whether to use bidirectional RNN for melody.
             dropout (float): Dropout rate for regularization.
             use_attention (bool): Whether to use attention mechanism. Default is False.
@@ -103,9 +102,7 @@ class LyricsGenerator(nn.Module):
         self.melody_rnn = nn.LSTM(
             input_size=melody_dim,
             hidden_size=hidden_dim,
-            num_layers=num_layers,
             bidirectional=self.bidirectional_melody,
-            dropout=dropout if num_layers > 1 else 0.0,
             batch_first=True
         )
         
@@ -113,14 +110,12 @@ class LyricsGenerator(nn.Module):
         self.lyrics_rnn = nn.LSTM(
             input_size=word_embedding_dim,
             hidden_size=hidden_dim,
-            num_layers=num_layers,
-            dropout=dropout if num_layers > 1 else 0.0,
             batch_first=True
         )
         
         # Attention mechanism
         if use_attention:
-            melody_dim = hidden_dim * (2 if self.melody_rnn.bidirectional else 1)
+            melody_dim = hidden_dim * (2 if self.bidirectional_melody else 1)
             self.attention_layer = Attention(
                 query_dim=hidden_dim,        # Query dimension (melody context)
                 key_dim=hidden_dim,          # Key dimension (lyrics output)
@@ -163,7 +158,7 @@ class LyricsGenerator(nn.Module):
         melody_output, (melody_hn, _) = self.melody_rnn(melody_input)
 
         # Handle bidirectional melody RNN output
-        if self.melody_rnn.bidirectional:
+        if self.bidirectional_melody:
             melody_context = torch.cat((melody_hn[-2], melody_hn[-1]), dim=-1)
         else:
             melody_context = melody_hn[-1]
@@ -199,10 +194,11 @@ class LyricsGenerator(nn.Module):
         return logits
 
 
-    def train_model(self, dataset, batch_size, chunk_size, stride, lr, weight_decay, teacher_forcing_ratio, epochs, device, 
+    def train_model(self, dataset, batch_size, chunk_size, stride, lr, weight_decay, teacher_forcing_ratio, penalty_weight, epochs, device, 
                     val_ratio, stopping_criteria=3, shuffle=True, log_dir="/content/runs", checkpoint_path="Trained Models/best_model.pth"):
         """
         Train the model with teacher forcing, validation, and log metrics to TensorBoard.
+        The training process enforces generation guidelined within the loss function calculation for each batch.
 
         Args:
             dataset (LyricsDataset): The dataset to use for training and validation.
@@ -234,6 +230,7 @@ class LyricsGenerator(nn.Module):
         )
 
         # Optimizer and Criterion
+        special_token_indices = {self.vocab[token] for token in SPECIAL_TOKENS if token in self.vocab}
         optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
         criterion = nn.CrossEntropyLoss(ignore_index=-1)
 
@@ -271,12 +268,29 @@ class LyricsGenerator(nn.Module):
                     else:
                         next_input = output.argmax(dim=-1).unsqueeze(1)  # Use model's prediction
                     current_input = next_input
+                
+                # Compute penalties
+                line_lengths = (targets == self.vocab.get(NEWLINE_TOKEN, None)).sum(dim=1)  # Count NEWLINE_TOKEN occurrences
+                long_line_penalty = (line_lengths.float().mean() - 10).clamp(min=0) # Penalty starts on lines with more than 10 tokens
+                
+                # General text length penalty
+                non_special_tokens = ~torch.isin(targets, torch.tensor(list(special_token_indices), device=device))
+                length_penalty = non_special_tokens.sum(dim=1).float().mean()
 
-                # Compute loss and backpropagate
-                loss = criterion(outputs.view(-1, self.word_vocab_size), targets.view(-1))
-                loss.backward()
+                # Parentheses imbalance penalty
+                open_count = (targets == self.vocab["("]).sum(dim=1)
+                close_count = (targets == self.vocab[")"]).sum(dim=1)
+                unmatched_penalty = torch.abs(open_count - close_count).float().mean()
+
+                # Combine penalties with the shared weight
+                total_penalty = penalty_weight * (long_line_penalty + length_penalty + unmatched_penalty)
+
+                # Compute loss and add penalties
+                base_loss = criterion(outputs.view(-1, self.word_vocab_size), targets.view(-1))
+                total_loss = base_loss + total_penalty
+                total_loss.backward()
                 optimizer.step()
-                train_loss += loss.item()
+                train_loss += total_loss.item()
 
             train_loss /= len(train_loader)
 
@@ -370,7 +384,7 @@ class LyricsGenerator(nn.Module):
         start_token = self.vocab.get(start_token, self.unk_index)
         melody_output, (melody_hn, _) = self.melody_rnn(melody_input)
 
-        if self.melody_rnn.bidirectional:
+        if self.bidirectional_melody:
             melody_context = torch.cat((melody_hn[-2], melody_hn[-1]), dim=-1)
         else:
             melody_context = melody_hn[-1]

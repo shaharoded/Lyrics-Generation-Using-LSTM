@@ -1,3 +1,9 @@
+'''
+Improvements:
+ - Finish training with the increased architecture. If loss acts good, can increase hidden even more.
+ - Look into the Attention - is it well built? Felt a little 'spaghetti'
+'''
+
 import os
 import torch
 from torch.utils.data import DataLoader
@@ -29,8 +35,7 @@ def train_model(dataset):
     model = LyricsGenerator(dataset=dataset,
                             word_embedding_dim=300, 
                             melody_dim=11, 
-                            hidden_dim=128,
-                            num_layers=1,
+                            hidden_dim=256,
                             bidirectional_melody=BIDIRECTIONAL,
                             dropout=DROPOUT,
                             use_attention=USE_ATTENTION)
@@ -43,6 +48,7 @@ def train_model(dataset):
         lr=LEARNING_RATE,
         weight_decay=WEIGHT_DECAY,
         teacher_forcing_ratio=TEACHERS_FORCING,
+        penalty_weight = GENERATION_PENALTY_WEIGHT,
         epochs=NUM_EPOCHS,
         stopping_criteria=EARLY_STOP,
         device=device,
@@ -65,8 +71,7 @@ def generate_text(train_dataset, song_name, start_token=BOT_TOKEN):
     model = LyricsGenerator(dataset=train_dataset, 
                             word_embedding_dim=300, 
                             melody_dim=11, 
-                            hidden_dim=128,
-                            num_layers=1,
+                            hidden_dim=256,
                             bidirectional_melody=BIDIRECTIONAL,
                             dropout=DROPOUT,
                             use_attention=USE_ATTENTION)

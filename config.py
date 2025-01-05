@@ -36,18 +36,18 @@ REPLACEMENTS = {    # char_to_replace: replacement, is_replacement_a_token
 SPECIAL_TOKENS = sorted(list({BOT_TOKEN, NEWLINE_TOKEN, CHORUS_TOKEN, EOT_TOKEN, UNKNOWN_TOKEN} | {value[0] for _, value in REPLACEMENTS.items() if value[1]}))
 
 # Training Parameters
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 5e-4
 WEIGHT_DECAY = 1e-5
-TEACHERS_FORCING = 0.5
+TEACHERS_FORCING = 0.3
 VAL_RATIO = 0.2
 CHUNK_SIZE = 50     # 50 processed tokens in each window
 STRIDE = 25     # 25 tokens overlap between one window and the next
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 EARLY_STOP = 5
-DROPOUT = 0.3
-NUM_EPOCHS = 25
+DROPOUT = 0.5
+NUM_EPOCHS = 40
 BIDIRECTIONAL = True    # Choose between True / False to modify architecture
-USE_ATTENTION = True   # Choose between True / False to modify architecture
+USE_ATTENTION = False   # Choose between True / False to modify architecture
 
 # Text Generation
 TEMEPRATURE = 1.5   # Values above 1.0 create a more 'creative' model.

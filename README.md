@@ -1,6 +1,8 @@
 # Lyrics-Generation-Using-LSTM
 
 ## Overview
+Meet **LuST.M** - Your new favorite shite of a lyrics generator model!
+And yes, that name possibility is exactly why we went with an LSTM model and not GRU.
 This project implements an LSTM-based model to generate song lyrics from melodies. The generation process is probabilistic, allowing diverse outputs for the same melody. The project combines advanced sequence modeling techniques with music and natural language processing.
 
 ![midi image](Images/midi_image.png)

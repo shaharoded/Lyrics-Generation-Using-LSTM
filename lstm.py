@@ -17,6 +17,7 @@ from dataset import *
 from word2vec import *
 from melody2vec import *
 
+
 class Attention(nn.Module):
     '''
     Optional addition to the LSTM architecture.
@@ -48,16 +49,15 @@ class Attention(nn.Module):
 
         Returns:
             torch.Tensor: Context vector of shape (batch_size, seq_len_query, output_dim).
-        """
+        """            
         # Project inputs
         query_proj = self.query_projection(query)  # (batch_size, seq_len_query, output_dim)
         keys_proj = self.key_projection(keys)      # (batch_size, seq_len_keys, output_dim)
         values_proj = self.value_projection(values)  # (batch_size, seq_len_keys, output_dim)
-
         # Compute attention scores
         scores = torch.matmul(query_proj, keys_proj.transpose(-2, -1))  # (batch_size, seq_len_query, seq_len_keys)
         attention_weights = self.softmax(scores)  # (batch_size, seq_len_query, seq_len_keys)
-
+        
         # Compute context vector
         context = torch.matmul(attention_weights, values_proj)  # (batch_size, seq_len_query, output_dim)
         return context  # (batch_size, seq_len_query, output_dim)
@@ -104,7 +104,7 @@ class LyricsGenerator(nn.Module):
             input_size=melody_dim,
             hidden_size=hidden_dim,
             num_layers=num_layers,
-            bidirectional=bidirectional_melody,
+            bidirectional=self.bidirectional_melody,
             dropout=dropout if num_layers > 1 else 0.0,
             batch_first=True
         )
@@ -118,22 +118,30 @@ class LyricsGenerator(nn.Module):
             batch_first=True
         )
         
-        # Attention mechanism as a separate class
+        # Attention mechanism
         if use_attention:
-            melody_context_dim = hidden_dim * (2 if bidirectional_melody else 1)
+            melody_dim = hidden_dim * (2 if self.melody_rnn.bidirectional else 1)
             self.attention_layer = Attention(
-                query_dim=melody_context_dim,
-                key_dim=hidden_dim,
-                value_dim=hidden_dim,
-                output_dim=hidden_dim
+                query_dim=hidden_dim,        # Query dimension (melody context)
+                key_dim=hidden_dim,          # Key dimension (lyrics output)
+                value_dim=hidden_dim,        # Value dimension (lyrics output)
+                output_dim=hidden_dim        # Output dimension
             )
+            # Add projection for melody_context
+            self.melody_context_projection = nn.Linear(melody_dim, hidden_dim)
+            # -----------
+            # Projection for combined context in generation
+            # This ensures the concatenated context aligns with the fc input
+            combined_context_dim = hidden_dim + (hidden_dim * 2 if self.bidirectional_melody else hidden_dim)
+            self.combined_context_projection = nn.Linear(combined_context_dim, hidden_dim)
+            # -----------
         
         # Dropout layer before FC
         self.fc_dropout = nn.Dropout(dropout)
         
         # Final Fully Connected Layer
-        melody_hidden_dim = hidden_dim * (2 if bidirectional_melody else 1)
-        fc_input_dim = hidden_dim if use_attention else (hidden_dim + melody_hidden_dim)
+        melody_dim = hidden_dim * (2 if self.bidirectional_melody else 1)
+        fc_input_dim = hidden_dim if use_attention else (hidden_dim + melody_dim)
         self.fc = nn.Linear(fc_input_dim, self.word_vocab_size)
 
 
@@ -164,10 +172,19 @@ class LyricsGenerator(nn.Module):
         lyrics_output, _ = self.lyrics_rnn(word_embedded)
 
         if self.use_attention:
+            # Project melody_context to match hidden_dim
+            projected_melody_context = self.melody_context_projection(melody_context)
+            
             # Use the attention layer (attention per token)
-            context = self.attention_layer(query=lyrics_output, 
-                                           keys=melody_context, 
-                                           values=melody_context)
+            context = self.attention_layer(
+                query=lyrics_output,                          # Query: Lyrics RNN output
+                keys=projected_melody_context.unsqueeze(1),   # Keys: Projected melody context
+                values=projected_melody_context.unsqueeze(1)  # Values: Projected melody context
+            )
+            # Combine and project context
+            expanded_melody_context = melody_context.unsqueeze(1).expand(-1, context.size(1), -1)
+            combined_context = torch.cat((context, expanded_melody_context), dim=-1)
+            context = self.combined_context_projection(combined_context)
 
         else:
             # Expand the melody context to match the sequence length
@@ -365,11 +382,22 @@ class LyricsGenerator(nn.Module):
             word_embedded = self.word_embedding(current_token)
             lyrics_output, _ = self.lyrics_rnn(word_embedded)
 
-            # Combine melody and lyrics context
-            combined_context = torch.cat(
-                (lyrics_output[:, -1, :], melody_context), dim=-1
-            )
+            if self.use_attention:
+                # Project melody_context to match hidden_dim
+                projected_melody_context = self.melody_context_projection(melody_context)
+                expanded_melody_context = projected_melody_context.unsqueeze(1)  # (batch_size, 1, hidden_dim)
+                # Use attention layer
+                attention_context = self.attention_layer(
+                    query=lyrics_output,            # Query: Lyrics output
+                    keys=expanded_melody_context ,  # Keys: Projected melody context
+                    values=expanded_melody_context  # Values: Projected melody context
+                )
+                combined_context = torch.cat((attention_context.squeeze(1), melody_context), dim=-1)
+                combined_context = self.combined_context_projection(combined_context)
 
+            else:
+                combined_context = torch.cat((lyrics_output[:, -1, :], melody_context), dim=-1)
+            
             logits = self.fc(combined_context)
             probs = F.softmax(logits / temperature, dim=-1).squeeze()
 

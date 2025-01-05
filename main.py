@@ -24,7 +24,7 @@ def train_model(dataset):
     """
     Train the model using dataset and config.py parameters.
     """
-    print("[Option 2]: Training model...")
+    print("[Option 2]: Training a model...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = LyricsGenerator(dataset=dataset,
                             word_embedding_dim=300, 
@@ -44,6 +44,7 @@ def train_model(dataset):
         weight_decay=WEIGHT_DECAY,
         teacher_forcing_ratio=TEACHERS_FORCING,
         epochs=NUM_EPOCHS,
+        stopping_criteria=EARLY_STOP,
         device=device,
         val_ratio=VAL_RATIO,
         checkpoint_path=BEST_MODEL.format(name)

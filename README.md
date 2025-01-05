@@ -79,8 +79,9 @@ Chorus:
 ```
 Still better than poetry slam.
 
-To conclude, the general idea of the task is nice, but I highly doubt the effectiveness of combining the melody context is predicting the word, unless using a much bigger dataset.
-In the end, the bidirectional method generated what seemed to be better texts, which we assume resulted by the global usage of the melody, instead of using each group of notes as a context for each word.
+To conclude, the general idea of the task is nice, but I highly doubt the effectiveness of combining the melody context is predicting the word, unless using a much bigger dataset and architecture.
+In the end, the bidirectional method generated what seemed to be better texts, which we assume resulted by the global usage of the melody, instead of using each group of notes as a context for each word -> a very unique vector.
+Note that based on the structure of the `main.py` module, the `config.py` file also control the trained model from which the text will be generated (`USE_ATTENTION=?`, `BIDIRECTIONAL=?`).
 
 ## GitHub
 ### Initiating Git Repository

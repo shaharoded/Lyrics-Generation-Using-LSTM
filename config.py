@@ -46,7 +46,7 @@ BATCH_SIZE = 16
 EARLY_STOP = 5
 DROPOUT = 0.5
 NUM_EPOCHS = 40
-BIDIRECTIONAL = True    # Choose between True / False to modify architecture
+BIDIRECTIONAL = False    # Choose between True / False to modify architecture
 USE_ATTENTION = False   # Choose between True / False to modify architecture
 
 # Text Generation

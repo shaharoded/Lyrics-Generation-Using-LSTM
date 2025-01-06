@@ -6,6 +6,8 @@ melody information or unidirectional usage.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import Adam
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard import SummaryWriter
 from gensim.models import KeyedVectors
 import time
@@ -194,55 +196,56 @@ class LyricsGenerator(nn.Module):
         return logits
 
     
-    def __calculate_penalty(self, targets, special_token_indices, penalty_weight, device):
+    def __calculate_penalty(self, outputs, special_token_indices, penalty_weight, device):
         """
         Hidden class method to calculate penalties for long lines, text length, and parentheses imbalance.
         Penalties are integrated within the model to direct it towards better text generations.
         """
+        batch_size, seq_len, vocab_size = outputs.shape
+        penalties = 0.0
+
+        # Predicted tokens from the model's outputs
+        predicted_tokens = outputs.argmax(dim=-1)  # Shape: (batch_size, seq_len)
+
         # Long line penalty
         newline_token_idx = self.vocab.get(NEWLINE_TOKEN, None)
-        line_lengths = (targets == newline_token_idx).sum(dim=1) if newline_token_idx is not None else 0
-        long_line_penalty = (line_lengths.float().mean() - 5).clamp(min=0)  # Lines longer then 5 gets penalized
+        if newline_token_idx is not None:
+            newline_counts = (predicted_tokens == newline_token_idx).sum(dim=1)  # Count NEWLINE_TOKEN per batch
+            long_line_penalty = (newline_counts.float().mean() - 5).clamp(min=0)  # Penalize lines longer than 5
+            penalties += long_line_penalty
 
-        # General text length penalty -> encourage the model towards shorter texts
-        non_special_tokens = ~torch.isin(targets, torch.tensor(list(special_token_indices), device=device))
-        length_penalty = non_special_tokens.sum(dim=1).float().mean()
+        # Missing EOT_TOKEN & CHORUS_TOKEN penalties
+        eot_token_idx = self.vocab.get(EOT_TOKEN, None)
+        chorus_token_idx = self.vocab.get(CHORUS_TOKEN, None)
+        if eot_token_idx is not None:
+            eot_present = (predicted_tokens == eot_token_idx).any(dim=1)  # Check for EOT presence per batch
+            eot_penalty = (~eot_present).float().mean()  # Penalize missing EOT_TOKEN
+            penalties += eot_penalty
+        if chorus_token_idx is not None:
+            chorus_present = (predicted_tokens == chorus_token_idx).any(dim=1)  # Check for CHORUS presence per batch
+            chorus_penalty = (~chorus_present).float().mean()  # Penalize missing CHORUS
+            penalties += chorus_penalty
 
-        # Parentheses imbalance penalty (using stack method)
-        newline_token_idx = self.vocab.get(NEWLINE_TOKEN, None)
+        # Parentheses imbalance penalty (within segments)
         open_token_idx = self.vocab.get("(", -1)
         close_token_idx = self.vocab.get(")", -1)
-        unmatched_penalty = 0
-        flattened_targets = targets.view(-1)
+        if open_token_idx != -1 and close_token_idx != -1:
+            unmatched_penalty = 0.0
+            for batch in range(batch_size):
+                stack = []
+                for token in predicted_tokens[batch]:
+                    if token == open_token_idx:
+                        stack.append(token)  # Push '(' onto the stack
+                    elif token == close_token_idx:
+                        if stack:
+                            stack.pop()  # Match '(' with ')'
+                        else:
+                            unmatched_penalty += 1  # Unmatched ')'
+                unmatched_penalty += len(stack)  # Penalize unmatched '(' left in the stack
+            penalties += unmatched_penalty / batch_size  # Average penalty over the batch
 
-        # Identify positions of NEWLINE_TOKEN
-        newline_positions = (flattened_targets == newline_token_idx).nonzero(as_tuple=True)[0]
-        segment_positions = torch.cat([torch.tensor([0], device=flattened_targets.device), newline_positions, torch.tensor([len(flattened_targets)], device=flattened_targets.device)])
-
-        # Iterate over segments
-        for i in range(len(segment_positions) - 1):
-            segment = flattened_targets[segment_positions[i]:segment_positions[i + 1]]
-
-            # Stack to check order of parentheses
-            stack = []
-            local_penalty = 0
-
-            for token in segment:
-                if token == open_token_idx:
-                    stack.append(token)  # Push '(' onto the stack
-                elif token == close_token_idx:
-                    if stack:
-                        stack.pop()  # Pop a matching '('
-                    else:
-                        # Unmatched ')', add penalty
-                        local_penalty += 1
-
-            # Add penalties for unmatched '(' left in the stack
-            local_penalty += len(stack)
-            unmatched_penalty += local_penalty
-
-        # Combine penalties
-        return penalty_weight * (long_line_penalty + length_penalty + unmatched_penalty)
+        # Final penalty weighted by penalty_weight
+        return penalty_weight * penalties
 
 
     def train_model(self, dataset, batch_size, chunk_size, stride, lr, weight_decay, teacher_forcing_ratio, penalty_weight, epochs, device, 
@@ -284,6 +287,7 @@ class LyricsGenerator(nn.Module):
         special_token_indices = {self.vocab[token] for token in SPECIAL_TOKENS if token in self.vocab}
         optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
         criterion = nn.CrossEntropyLoss(ignore_index=-1)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, threshold=0.02)
 
         # TensorBoard setup
         writer = SummaryWriter(log_dir=log_dir)
@@ -295,7 +299,10 @@ class LyricsGenerator(nn.Module):
         start_time = time.time()
         epochs_no_improvement = 0
 
-        for epoch in range(1, epochs + 1):            
+        for epoch in range(1, epochs + 1):
+            # Reduce teachers forcing as a function of epoch
+            teacher_forcing_ratio *= (1 - epoch/epochs)             
+            
             # Training loop
             self.train()
             train_loss = 0.0
@@ -321,7 +328,7 @@ class LyricsGenerator(nn.Module):
                     current_input = next_input
                 
                 # Compute penalties on loss function
-                total_penalty = self._calculate_penalty(targets=targets, 
+                total_penalty = self.__calculate_penalty(outputs=outputs, 
                                                         special_token_indices=SPECIAL_TOKENS, 
                                                         penalty_weight=penalty_weight, 
                                                         device=device)
@@ -343,7 +350,7 @@ class LyricsGenerator(nn.Module):
                     word_input, melody_input, targets = word_input.to(device), melody_input.to(device), targets.to(device)
                     outputs = self(word_input, melody_input)
                     # Compute penalties on loss function
-                    total_penalty = self._calculate_penalty(targets=targets, 
+                    total_penalty = self.__calculate_penalty(outputs=outputs, 
                                                             special_token_indices=SPECIAL_TOKENS, 
                                                             penalty_weight=penalty_weight, 
                                                             device=device)
@@ -352,6 +359,9 @@ class LyricsGenerator(nn.Module):
                     val_loss += total_loss.item()
 
             val_loss /= len(val_loader)
+            
+            # Step the scheduler based on small reduction in val_loss
+            scheduler.step(val_loss)
 
             # Check for the best model
             if val_loss < best_val_loss:
@@ -366,9 +376,11 @@ class LyricsGenerator(nn.Module):
 
             # TensorBoard logging
             writer.add_scalars('Loss', {'Train': train_loss, 'Validation': val_loss}, epoch)
+            writer.add_scalar('Learning Rate', scheduler.get_last_lr()[0], epoch)
+            writer.add_scalar('Teacher Forcing Ratio', teacher_forcing_ratio, epoch)
 
             training_time = round((time.time() - start_time)/60,2)
-            print(f"[Training Status]: Epoch {epoch}/{epochs} - Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}, Time: {training_time:.2f}m")
+            print(f"[Training Status]: Epoch {epoch}/{epochs} - Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}, LR: {scheduler.get_last_lr()[0]}, Teacher's Ratio: {teacher_forcing_ratio}, Time: {training_time:.2f}m")
 
         writer.close()
 

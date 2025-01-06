@@ -36,16 +36,16 @@ REPLACEMENTS = {    # char_to_replace: replacement, is_replacement_a_token
 SPECIAL_TOKENS = sorted(list({BOT_TOKEN, NEWLINE_TOKEN, CHORUS_TOKEN, EOT_TOKEN, UNKNOWN_TOKEN} | {value[0] for _, value in REPLACEMENTS.items() if value[1]}))
 
 # Training Parameters
-LEARNING_RATE = 5e-4
+LEARNING_RATE = 1e-3    # Initial learning rate - decreases using scheduler
 WEIGHT_DECAY = 1e-5
-TEACHERS_FORCING = 0.5
+TEACHERS_FORCING = 0.5  # Initial ratio - decreases across epochs
 VAL_RATIO = 0.2
 CHUNK_SIZE = 50     # 50 processed tokens in each window
 STRIDE = 25     # 25 tokens overlap between one window and the next
 BATCH_SIZE = 16
 EARLY_STOP = 3
 DROPOUT = 0.5   # Only for linear layers
-GENERATION_PENALTY_WEIGHT = 0.5 # Penalty added to the loss function under predefined conditions in the train function.
+GENERATION_PENALTY_WEIGHT = 0.3 # Penalty added to the loss function under predefined conditions in the train function.
 NUM_EPOCHS = 40
 HIDDEN_SIZE = 256
 BIDIRECTIONAL = False    # Choose between True / False to modify architecture

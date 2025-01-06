@@ -35,7 +35,7 @@ def train_model(dataset):
     model = LyricsGenerator(dataset=dataset,
                             word_embedding_dim=300, 
                             melody_dim=11, 
-                            hidden_dim=256,
+                            hidden_dim=HIDDEN_SIZE,
                             bidirectional_melody=BIDIRECTIONAL,
                             dropout=DROPOUT,
                             use_attention=USE_ATTENTION)
@@ -71,7 +71,7 @@ def generate_text(train_dataset, song_name, start_token=BOT_TOKEN):
     model = LyricsGenerator(dataset=train_dataset, 
                             word_embedding_dim=300, 
                             melody_dim=11, 
-                            hidden_dim=256,
+                            hidden_dim=HIDDEN_SIZE,
                             bidirectional_melody=BIDIRECTIONAL,
                             dropout=DROPOUT,
                             use_attention=USE_ATTENTION)

@@ -44,12 +44,13 @@ CHUNK_SIZE = 50     # 50 processed tokens in each window
 STRIDE = 25     # 25 tokens overlap between one window and the next
 BATCH_SIZE = 16
 EARLY_STOP = 3
-DROPOUT = 0.5
-GENERATION_PENALTY_WEIGHT = 0.2 # Penalty added to the loss function under predefined conditions in the train function.
+DROPOUT = 0.5   # Only for linear layers
+GENERATION_PENALTY_WEIGHT = 0.5 # Penalty added to the loss function under predefined conditions in the train function.
 NUM_EPOCHS = 40
+HIDDEN_SIZE = 256
 BIDIRECTIONAL = False    # Choose between True / False to modify architecture
 USE_ATTENTION = False   # Choose between True / False to modify architecture
 
 # Text Generation
-TEMEPRATURE = 1.5   # Values above 1.0 create a more 'creative' model.
+TEMEPRATURE = 0.8   # Values above 1.0 create a more 'creative' model.
 MAX_OUTPUT_LENGTH = 250     # Limit the output length if hasn't stop on it's own

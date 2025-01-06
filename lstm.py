@@ -193,6 +193,57 @@ class LyricsGenerator(nn.Module):
 
         return logits
 
+    
+    def __calculate_penalty(self, targets, special_token_indices, penalty_weight, device):
+        """
+        Hidden class method to calculate penalties for long lines, text length, and parentheses imbalance.
+        Penalties are integrated within the model to direct it towards better text generations.
+        """
+        # Long line penalty
+        newline_token_idx = self.vocab.get(NEWLINE_TOKEN, None)
+        line_lengths = (targets == newline_token_idx).sum(dim=1) if newline_token_idx is not None else 0
+        long_line_penalty = (line_lengths.float().mean() - 5).clamp(min=0)  # Lines longer then 5 gets penalized
+
+        # General text length penalty -> encourage the model towards shorter texts
+        non_special_tokens = ~torch.isin(targets, torch.tensor(list(special_token_indices), device=device))
+        length_penalty = non_special_tokens.sum(dim=1).float().mean()
+
+        # Parentheses imbalance penalty (using stack method)
+        newline_token_idx = self.vocab.get(NEWLINE_TOKEN, None)
+        open_token_idx = self.vocab.get("(", -1)
+        close_token_idx = self.vocab.get(")", -1)
+        unmatched_penalty = 0
+        flattened_targets = targets.view(-1)
+
+        # Identify positions of NEWLINE_TOKEN
+        newline_positions = (flattened_targets == newline_token_idx).nonzero(as_tuple=True)[0]
+        segment_positions = torch.cat([torch.tensor([0], device=flattened_targets.device), newline_positions, torch.tensor([len(flattened_targets)], device=flattened_targets.device)])
+
+        # Iterate over segments
+        for i in range(len(segment_positions) - 1):
+            segment = flattened_targets[segment_positions[i]:segment_positions[i + 1]]
+
+            # Stack to check order of parentheses
+            stack = []
+            local_penalty = 0
+
+            for token in segment:
+                if token == open_token_idx:
+                    stack.append(token)  # Push '(' onto the stack
+                elif token == close_token_idx:
+                    if stack:
+                        stack.pop()  # Pop a matching '('
+                    else:
+                        # Unmatched ')', add penalty
+                        local_penalty += 1
+
+            # Add penalties for unmatched '(' left in the stack
+            local_penalty += len(stack)
+            unmatched_penalty += local_penalty
+
+        # Combine penalties
+        return penalty_weight * (long_line_penalty + length_penalty + unmatched_penalty)
+
 
     def train_model(self, dataset, batch_size, chunk_size, stride, lr, weight_decay, teacher_forcing_ratio, penalty_weight, epochs, device, 
                     val_ratio, stopping_criteria=3, shuffle=True, log_dir="/content/runs", checkpoint_path="Trained Models/best_model.pth"):
@@ -269,21 +320,11 @@ class LyricsGenerator(nn.Module):
                         next_input = output.argmax(dim=-1).unsqueeze(1)  # Use model's prediction
                     current_input = next_input
                 
-                # Compute penalties
-                line_lengths = (targets == self.vocab.get(NEWLINE_TOKEN, None)).sum(dim=1)  # Count NEWLINE_TOKEN occurrences
-                long_line_penalty = (line_lengths.float().mean() - 10).clamp(min=0) # Penalty starts on lines with more than 10 tokens
-                
-                # General text length penalty
-                non_special_tokens = ~torch.isin(targets, torch.tensor(list(special_token_indices), device=device))
-                length_penalty = non_special_tokens.sum(dim=1).float().mean()
-
-                # Parentheses imbalance penalty
-                open_count = (targets == self.vocab["("]).sum(dim=1)
-                close_count = (targets == self.vocab[")"]).sum(dim=1)
-                unmatched_penalty = torch.abs(open_count - close_count).float().mean()
-
-                # Combine penalties with the shared weight
-                total_penalty = penalty_weight * (long_line_penalty + length_penalty + unmatched_penalty)
+                # Compute penalties on loss function
+                total_penalty = self._calculate_penalty(targets=targets, 
+                                                        special_token_indices=SPECIAL_TOKENS, 
+                                                        penalty_weight=penalty_weight, 
+                                                        device=device)
 
                 # Compute loss and add penalties
                 base_loss = criterion(outputs.view(-1, self.word_vocab_size), targets.view(-1))
@@ -301,16 +342,14 @@ class LyricsGenerator(nn.Module):
                 for batch_idx, (word_input, melody_input, targets) in enumerate(val_loader):
                     word_input, melody_input, targets = word_input.to(device), melody_input.to(device), targets.to(device)
                     outputs = self(word_input, melody_input)
-                    # Check shapes before loss calculation
-                    if outputs.shape[:2] != targets.shape[:2]:
-                        print(f"[Batch {batch_idx}] Shape mismatch detected!")
-                        print(f"Outputs shape: {outputs.shape}")
-                        print(f"Targets shape: {targets.shape}")
-                        print(f"Word input shape: {word_input.shape}")
-                        print(f"Melody input shape: {melody_input.shape}")
-                        print(f"Targets batch size: {targets.size(0)}, Expected batch size: {outputs.size(0)}")
-                    loss = criterion(outputs.view(-1, self.word_vocab_size), targets.view(-1))
-                    val_loss += loss.item()
+                    # Compute penalties on loss function
+                    total_penalty = self._calculate_penalty(targets=targets, 
+                                                            special_token_indices=SPECIAL_TOKENS, 
+                                                            penalty_weight=penalty_weight, 
+                                                            device=device)
+                    base_loss = criterion(outputs.view(-1, self.word_vocab_size), targets.view(-1))
+                    total_loss = base_loss + total_penalty
+                    val_loss += total_loss.item()
 
             val_loss /= len(val_loader)
 

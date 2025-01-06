@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from gensim.models import KeyedVectors
 import time
 import random
+import re
 
 # Local Code
 from config import (EOT_TOKEN, BOT_TOKEN, CHORUS_TOKEN, NEWLINE_TOKEN, UNKNOWN_TOKEN)
@@ -380,7 +381,7 @@ class LyricsGenerator(nn.Module):
             writer.add_scalar('Teacher Forcing Ratio', teacher_forcing_ratio, epoch)
 
             training_time = round((time.time() - start_time)/60,2)
-            print(f"[Training Status]: Epoch {epoch}/{epochs} - Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}, LR: {scheduler.get_last_lr()[0]}, Teacher's Ratio: {teacher_forcing_ratio}, Time: {training_time:.2f}m")
+            print(f"[Training Status]: Epoch {epoch}/{epochs} - Train Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}, LR: {scheduler.get_last_lr()[0]}, Teacher's Ratio: {teacher_forcing_ratio:.3f}, Time: {training_time:.2f}m")
 
         writer.close()
 
@@ -482,11 +483,18 @@ class LyricsGenerator(nn.Module):
             word = self.vocab_inv.get(token, None)
             if word == NEWLINE_TOKEN:
                 generated_text.append("\n")
-            elif word == CHORUS_TOKEN:
+            elif word == CHORUS_TOKEN and CHORUS_TOKEN not in generated_text: # Allow 1 CHORUS
                 generated_text.append("\n\nChorus:\n")
             elif word not in [BOT_TOKEN, EOT_TOKEN, UNKNOWN_TOKEN]:
                 generated_text.append(word)
             elif not word:
                 continue
         print(f'[Info]: Generated sequence length: {len(generated_text)} tokens.')
-        return ' '.join(generated_text)
+        
+        # Prettify the text a little
+        raw_text = ' '.join(generated_text)
+        processed_text = re.sub(r'\s([?!.,;:])', r'\1', raw_text)   # Remove spaces before punctuation marks
+        processed_text = re.sub(r'([\(\[{])\s+', r'\1', processed_text)  # No space after opening brackets
+        processed_text = re.sub(r'\s+([\)\]}])', r'\1', processed_text)  # No space before closing brackets
+        
+        return processed_text

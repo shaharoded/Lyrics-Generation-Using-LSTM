@@ -48,7 +48,7 @@ DROPOUT = 0.5   # Only for linear layers
 GENERATION_PENALTY_WEIGHT = 0.3 # Penalty added to the loss function under predefined conditions in the train function.
 NUM_EPOCHS = 40
 HIDDEN_SIZE = 256
-BIDIRECTIONAL = True    # Choose between True / False to modify architecture
+BIDIRECTIONAL = False    # Choose between True / False to modify architecture
 USE_ATTENTION = False   # Choose between True / False to modify architecture
 
 # Text Generation

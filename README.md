@@ -56,6 +56,9 @@ Train the model on a prepared dataset of song lyrics and melodies. Monitor perfo
 ### Prediction
 Generate song lyrics based on melody input and a starting token. Experiment with different temperature values for varied outputs.
 
+You can find a few trained models with the architecture from `config.py` [here](https://drive.google.com/file/d/1-YhtknwRKIo6_WCK3EKBiipe5rlOKKrJ/view?usp=drive_link).
+You can use them by placing the files in a  `Trained Models` folder (under root).
+
 ---
 
 ## Results
@@ -75,7 +78,7 @@ love you are
  here
  that you work it is no son of mine
 ```
-A hybrid of a broken heart and "Billie Jean". Still better than poetry slam.
+A hybrid of a broken heart and "Billie Jean". Still better than Poetry Slam.
 
 To conclude, the general idea of the task is nice, and we saw significant improvement when increased the dimentions and added structure penalties.
 In the end, the bidirectional method generated what seemed to be better texts, which we assume resulted by the global usage of the melody, instead of using each group of notes as a context for each word -> a very unique vector.

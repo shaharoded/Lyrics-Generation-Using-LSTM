@@ -43,12 +43,12 @@ VAL_RATIO = 0.2
 CHUNK_SIZE = 50     # 50 processed tokens in each window
 STRIDE = 25     # 25 tokens overlap between one window and the next
 BATCH_SIZE = 16
-EARLY_STOP = 3
+EARLY_STOP = 5  # Relatively high due to some instability using penalties
 DROPOUT = 0.5   # Only for linear layers
 GENERATION_PENALTY_WEIGHT = 0.3 # Penalty added to the loss function under predefined conditions in the train function.
 NUM_EPOCHS = 40
 HIDDEN_SIZE = 256
-BIDIRECTIONAL = False    # Choose between True / False to modify architecture
+BIDIRECTIONAL = True    # Choose between True / False to modify architecture
 USE_ATTENTION = False   # Choose between True / False to modify architecture
 
 # Text Generation

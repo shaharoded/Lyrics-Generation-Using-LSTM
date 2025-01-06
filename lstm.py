@@ -479,12 +479,14 @@ class LyricsGenerator(nn.Module):
         # Map indices back to words and handle replacements
         start_word = self.vocab_inv.get(start_token, UNKNOWN_TOKEN)
         generated_text = [start_word]
+        chorus_added = False  # Flag to track if CHORUS has been added
         for token in generated_tokens:
             word = self.vocab_inv.get(token, None)
             if word == NEWLINE_TOKEN:
                 generated_text.append("\n")
-            elif word == CHORUS_TOKEN and CHORUS_TOKEN not in generated_text: # Allow 1 CHORUS
+            elif word == CHORUS_TOKEN and not chorus_added: # Allow 1 CHORUS
                 generated_text.append("\n\nChorus:\n")
+                chorus_added = True
             elif word not in [BOT_TOKEN, EOT_TOKEN, UNKNOWN_TOKEN]:
                 generated_text.append(word)
             elif not word:
